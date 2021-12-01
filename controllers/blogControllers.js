@@ -1,109 +1,142 @@
+const authorModel = require("../models/authorModel");
 const blogModels = require("../models/blogsModel");
-const authorModels = require("../models/authorModel");
+
+//-------------------------------------------------------------------------------------------//
+// This is the second api for the creation of the blog.
 
 const createBlog = async function (req, res) {
   try {
     let myBlog = req.body;
     let authorId = req.body.authorId;
-  
-    let authorFromRequest = await authorModels.findById(authorId);
+    let authorFromRequest = await authorModel.findById(authorId);
     if (authorFromRequest) {
-      let isPublished = req.body.isPublished
-      if (isPublished == true){
-          myBlog.publishedAt = Date();
-          let savedBlog1 = await blogModels.create(myBlog);
-          res.status(201).send({ status: true, data: savedBlog1 });
+      let isPublished = req.body.isPublished;
+      if (isPublished == true) {
+        myBlog.publishedAt = Date();
+        let savedBlog1 = await blogModels.create(myBlog);
+        res.status(201).send({ status: true, data: savedBlog1 });
       } else {
-          let savedBlog2 = await blogModels.create(myBlog);
-          res.status(201).send({ status: true, data: savedBlog2 });
+        let savedBlog2 = await blogModels.create(myBlog);
+        res.status(201).send({ status: true, data: savedBlog2 });
       }
-     
-  } else {
-      res.send("This author Id doesn't exist")
-  }
-} catch (error) {
-  res.status(500).send({ status: false, msg: error.message })
-}
-}
-const returnBlogsFiltered = async function (req, res) {
-  let blogFound = await blogModels.find(req.query);
-  let len = blogFound.length;
-  let arr = [];
-  for (let i = 0; i < len; i++) {
-    if (
-      (blogFound[i].isDeleted == false && blogFound[i].isPublished == true) ||
-      blogFound[i].isPublished == false
-    ) {
-      arr.push(blogFound[i]);
     } else {
-      continue;
+      res.status(400).send({status: false, Message:"This author Id doesn't exist"});
     }
-  }
-  console.log(arr);
-  if (arr) {
-    res.status(200).send({ msg: "success", data: arr });
-  } else {
-    res.status(404).send({ msg: "No such book is found" });
+  } catch (error) {
+    res.status(500).send({ status: false, msg: error.message });
   }
 };
+
+//--------------------------------------------------------------------------------------------//
+// This is the third api to get the filtered data.
+
+const returnBlogsFiltered = async function (req, res) {
+  try {
+    let blogFound = await blogModels
+      .find(req.query)
+      .populate("authorId", { title: 1, fname: 1, lname: 1 });
+    let len = blogFound.length;
+    let arr = [];
+    for (let i = 0; i < len; i++) {
+      if (blogFound[i].isDeleted == false && blogFound[i].isPublished == true) {
+        arr.push(blogFound[i]);
+      } else {
+        continue;
+      }
+    }
+    if (arr.length > 0) {
+      res.status(200).send({ status: true, data: arr });
+    } else {
+      res.status(404).send({status: false, message: "No such blog is found" });
+    }
+  } catch (error) {
+    res.status(500).send({ status: false, msg: error.message });
+  }
+};
+
+//--------------------------------------------------------------------------------------------//
+// This is the fouth api to update the details of a blog in database by using blogId.
+
 const updateData = async function (req, res) {
   try {
     let blogId = req.params.id;
     let data = await blogModels.findOne({ _id: blogId });
     let update = req.body;
-    if (!data) {
-      return res
-        .status(404)
-        .send({ status: false, msg: "Provide valid BlogId" });
-    }
-    if (data.isDeleted == true) {
-      return res.send({ status: false, msg: "This book is no longer exists" });
-    }
-
-    if (update) {
-      if (update.title) {
-        data.title = update.title;
+    let id3 = data.authorId;
+    if (req.userId == id3) {
+      // we are authorising particular author
+      if (!data) {
+        return res
+          .status(404)
+          .send({ status: false, msg: "Provide valid BlogId" });
       }
-
-      if (update.subcategory) {
-        data.subcategory = update.subcategory;
+      if (data.isDeleted == true) {
+        return res.status(404).send({
+          status: false,
+          msg: "This blog is no longer exists",
+        });
       }
-      if (update.Body) {
-        data.Body = update.Body;
+      if (update) {
+        if (update.title) {
+          data.title = update.title;
+        }
+        if (update.subcategory) {
+          data.subcategory = update.subcategory;
+        }
+        if (update.body) {
+          data.body = update.body;
+        }
+        if (update.tags) {
+          data.tags = update.tags;
+        }
+        data.save();
+      } else {
+        res.status(400).send({status: false, msg: "Please provide data to update" });
       }
-      if (update.tags) {
-        data.tags = update.tags;
-      }
-      data.save();
+      res.status(200).send({ status: true, data: data });
     } else {
-      res.send({ msg: "Please provide data to update" });
+      res.status(400).send({status: false, message:" You are not authorize to update this blog"});
     }
-    res.status(200).send({ msg: "Successful", data: data });
   } catch (err) {
-    res.status(400).send({ msg: "err.message" });
+    res.status(500).send({ msg: err.message });
   }
 };
+
+//-------------------------------------------------------------------------------------------//
+// This is the fifth api to delete a blog in database by using blogId.
+
 const deleteBlog = async function (req, res) {
   try {
     let id1 = req.params.id;
     let data = await blogModels.findOne({ _id: id1 });
-    if (!data) {
-      return res
-        .status(404)
-        .send({ status: false, msg: "Blog id does not exits" });
+    if (data.isDeleted == false) {
+      let id2 = data.authorId;
+      if (req.userId == id2) {
+        // we are authorising particular author
+        if (!data) {
+          return res
+            .status(404)
+            .send({ status: false, msg: "Blog id does not exits" });
+        } else {
+          data.isDeleted = true;
+          data.deletedAt = Date();
+          data.save();
+          res.status(200).send({ status: true, data: data });
+        }
+      } else {
+        res.status(400).send({ status:false, message:" You are not authorize to delete this blog"});
+      }
     } else {
-      data.isDeleted = true;
-      data.save();
-      res
-      .status(200)
-      .send({ msg: "successful", data: data });
+      res.status(400).send( {status: false , message:"this blog is already deleted"});
     }
   } catch (err) {
-    res
-    .status(500)
-    .send({ msg: err.message });
+    res.status(500).send({ msg: err.message });
   }
 };
+
+//-------------------------------------------------------------------------------------------//
+// This is the sixth api to delete a blog in database by using specific details of that blog.
+
 const deleteSpecific = async function (req, res) {
   try {
     let obj = {};
@@ -123,22 +156,31 @@ const deleteSpecific = async function (req, res) {
       obj.published = req.query.published;
     }
     let data = await blogModels.findOne(obj);
-    if (!data) {
-      return res
-        .status(404)
-        .send({ status: false, msg: "The given data is Invalid" });
+    if (data.isDeleted == false) {
+      let id4 = data.authorId;
+      if (req.userId == id4) {
+        // we are authorising particular author
+        if (!data) {
+          return res
+            .status(404)
+            .send({ status: false, msg: "The given data is Invalid" });
+        }
+        data.isDeleted = true;
+        data.deletedAt = Date();
+        data.save();
+        res.status(200).send({ status: true, data: data });
+      } else {
+        res.status(400).send({ status:false, message:" You are not authorize to delete any detail of this blog"});
+      }
+    } else {
+      res.status(400).send({status:false , message:"This blog is already deleted"});
     }
-    data.isDeleted = true;
-    data.save();
-    res
-    .status(200)
-    .send({ msg: "successful", data: data });
   } catch (err) {
-    res
-    .status(500)
-    .send({ msg: "Some error occur" });
+    res.status(500).send({ msg: err.message });
   }
 };
+
+//-------------------------------------------------------------------------------------------//
 
 module.exports.createBlog = createBlog;
 module.exports.returnBlogsFiltered = returnBlogsFiltered;
